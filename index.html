@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>nslinks 目录树名字空间</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#14110c;color:#f2ecdd}
+.wrap{display:grid;grid-template-columns:minmax(430px,1fr) 330px;gap:16px;padding:18px;align-items:start}
+.card{background:#1d1a13;border:1px solid #37301f;border-radius:12px;padding:12px}
+.tree{font-family:ui-monospace,monospace;background:#16130e;border-radius:10px;padding:10px;min-height:240px}
+.row{display:flex;align-items:center;gap:6px;padding:2px 0}
+.twist{width:16px;color:#c9a227;cursor:pointer}
+.name{color:#f2ecdd}
+.name.dir{color:#f0c674}
+.badge{font-size:11px;padding:0 7px;border-radius:999px;background:#2b2517;color:#d8b95f}
+.badge.link{background:#1f3a2b;color:#8fe0a8}
+.kids{margin-left:14px;border-left:1px dashed #3a3324;padding-left:8px}
+button{font:inherit;padding:5px 11px;margin:0 8px 8px 0;border:1px solid #3a3324;border-radius:8px;background:#262115;color:#f2ecdd;cursor:pointer}
+button.main{background:#c9873b;border-color:#c9873b;color:#1a1409}
+input,select{font:inherit;padding:4px 8px;border:1px solid #3a3324;border-radius:8px;background:#16130e;color:#f2ecdd}
+input{width:180px}
+pre{background:#16130e;color:#ffd9a0;padding:10px;border-radius:8px;overflow:auto;font-size:12px}
+.chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;background:#2b2517;color:#f0c674;margin-right:6px}
+.chip.bad{background:#3a1f2b;color:#ff9aa9}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="tree" id="tree"></div>
+    <div id="legend" style="margin:10px 0"></div>
+    <pre id="out">还没跑</pre>
+  </div>
+  <div class="card">
+    <h2 style="font-size:13px;color:#c9b98a;margin:0 0 8px">操作台</h2>
+    <div>种类 <select id="kind"><option>mkdir</option><option>create</option><option>link</option><option>unlink</option><option>rename</option></select></div>
+    <div style="margin:6px 0">路径 <input id="path" value="/b/g2/k"></div>
+    <div style="margin:6px 0">源 <input id="from" value="/b/g2/h"></div>
+    <div style="margin:6px 0">目标 <input id="to" value="/b/h2"></div>
+    <div><button id="doRun" class="main">执行</button><button id="doReset">重置</button></div>
+    <div id="log" style="font-size:12px;color:#c9b98a;margin-top:8px">点右边操作台的按钮开始。</div>
+  </div>
+</div>
+<div id="scene" hidden>{
+  "state": {
+    "entries": [["/", 1]],
+    "nodes": { "1": { "kind": "dir", "links": 1 } },
+    "counts": { "mkdir": 0, "create": 0, "link": 0, "drop": 0, "move": 0 },
+    "freed": 0,
+    "errs": []
+  },
+  "events": [
+    { "kind": "mkdir", "path": "/a" },
+    { "kind": "create", "path": "/a/f" },
+    { "kind": "mkdir", "path": "/b" },
+    { "kind": "mkdir", "path": "/b/g" },
+    { "kind": "create", "path": "/b/g/h" },
+    { "kind": "link", "from": "/b/g/h", "to": "/b/h" },
+    { "kind": "rename", "from": "/b/g", "to": "/b/g2" },
+    { "kind": "unlink", "path": "/b/h" },
+    { "kind": "mkdir", "path": "/a/g" },
+    { "kind": "unlink", "path": "/a/g" },
+    { "kind": "create", "path": "/a/f2" },
+    { "kind": "mkdir", "path": "/a2/f2/s" },
+    { "kind": "rename", "from": "/a", "to": "/a2" },
+    { "kind": "unlink", "path": "/a2/f" },
+    { "kind": "link", "from": "/a2", "to": "/a2link" },
+    { "kind": "unlink", "path": "/a2" },
+    { "kind": "create", "path": "/b/g2/k" },
+    { "kind": "rename", "from": "/b/g2", "to": "/b/g2/s" },
+    { "kind": "rename", "from": "/b/g2", "to": "/a2" },
+    { "kind": "mkdir", "path": "a/notes" },
+    { "kind": "unlink", "path": "/nope" },
+    { "kind": "mkdir", "path": "/b/g2" },
+    { "kind": "mkdir", "path": "/b/s" },
+    { "kind": "link", "from": "/a2/f2", "to": "/b/g2/f2.link" }
+  ]
+}</div>
+<script type="module">
+import { render } from "./app.js";
+
+const scene = JSON.parse(document.getElementById("scene").textContent);
+let spec = JSON.parse(JSON.stringify(scene));
+const folded = new Set();
+let seenEvents = -1;
+let seenFailed = 0;
+
+function segmentsOf(path) {
+  return path === "/" ? [] : String(path).split("/").slice(1);
+}
+
+function buildTree(pairs, nodes) {
+  const root = { path: "/", name: "/", id: null, kind: "dir", links: 0, kids: [] };
+  const index = { "/": root };
+  const list = pairs.slice().sort(function (a, b) {
+    const da = segmentsOf(a[0]).length;
+    const db = segmentsOf(b[0]).length;
+    if (da !== db) { return da - db; }
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  });
+  for (const pair of list) {
+    const segments = segmentsOf(pair[0]);
+    const node = nodes[String(pair[1])] || {};
+    if (segments.length === 0) {
+      root.id = pair[1];
+      root.kind = node.kind || "dir";
+      root.links = typeof node.links === "number" ? node.links : 0;
+      continue;
+    }
+    const item = {
+      path: pair[0],
+      name: segments[segments.length - 1],
+      id: pair[1],
+      kind: node.kind || "?",
+      links: typeof node.links === "number" ? node.links : 0,
+      kids: []
+    };
+    index[pair[0]] = item;
+    const parentPath = segments.length <= 1 ? "/" : "/" + segments.slice(0, -1).join("/");
+    (index[parentPath] || root).kids.push(item);
+  }
+  return root;
+}
+
+function paint(item, holder) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const twist = document.createElement("span");
+  twist.className = "twist";
+  const hasKids = item.kids.length > 0;
+  twist.textContent = hasKids ? (folded.has(item.path) ? "+" : "-") : " ";
+  if (hasKids) {
+    twist.addEventListener("click", function () {
+      if (folded.has(item.path)) { folded.delete(item.path); } else { folded.add(item.path); }
+      draw();
+    });
+  }
+  row.appendChild(twist);
+  const name = document.createElement("span");
+  name.className = item.kind === "dir" ? "name dir" : "name";
+  name.textContent = item.kind === "dir" ? item.name + "/" : item.name;
+  row.appendChild(name);
+  const badge = document.createElement("span");
+  badge.className = item.links >= 2 ? "badge link" : "badge";
+  badge.textContent = item.id === null ? "编号 1" : "编号 " + item.id + " 链接 " + item.links;
+  row.appendChild(badge);
+  holder.appendChild(row);
+  if (hasKids && !folded.has(item.path)) {
+    const kids = document.createElement("div");
+    kids.className = "kids";
+    for (const kid of item.kids) { paint(kid, kids); }
+    holder.appendChild(kids);
+  }
+}
+
+function draw() {
+  const view = render(spec);
+  const holder = document.getElementById("tree");
+  holder.textContent = "";
+  paint(buildTree(view.entries, view.nodes), holder);
+  document.getElementById("out").textContent = JSON.stringify(
+    { entries: view.entries, node_table: view.node_table, counts: view.counts,
+      freed: view.freed, next_id: view.next_id, failed: view.failed }, null, 1);
+  const legend = document.getElementById("legend");
+  legend.textContent = "";
+  const chip = function (label, bad) {
+    const span = document.createElement("span");
+    span.className = bad ? "chip bad" : "chip";
+    span.textContent = label;
+    legend.appendChild(span);
+  };
+  const dirs = view.node_table.filter(function (row) { return row[1] === "dir"; }).length;
+  const files = view.node_table.filter(function (row) { return row[1] === "file"; }).length;
+  chip("条目 " + view.entries.length);
+  chip("目录 " + dirs);
+  chip("文件 " + files);
+  chip("最深 " + view.max_depth);
+  chip("下一个编号 " + view.next_id);
+  chip("释放 " + view.freed);
+  chip("空目录 " + view.empty_dirs);
+  chip("硬链接数一致 " + view.links_ok, !view.links_ok);
+  chip("无孤儿 " + view.no_orphan, !view.no_orphan);
+  chip("有序无重复 " + view.ordered, !view.ordered);
+  const log = document.getElementById("log");
+  const fresh = seenEvents >= 0 && spec.events.length > seenEvents;
+  if (fresh && view.failed > seenFailed && view.errs.length > 0) {
+    const row = view.errs[view.errs.length - 1];
+    log.textContent = "最后一条被拒：" + row[0] + " " + row[1];
+  } else if (fresh) {
+    log.textContent = "最后一条已生效。";
+  } else {
+    log.textContent = "点右边操作台的按钮开始。";
+  }
+  seenEvents = spec.events.length;
+  seenFailed = view.failed;
+}
+
+document.getElementById("doRun").addEventListener("click", function () {
+  const kind = document.getElementById("kind").value;
+  const path = document.getElementById("path").value;
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  if (kind === "link" || kind === "rename") { spec.events.push({ kind: kind, from: from, to: to }); }
+  else { spec.events.push({ kind: kind, path: path }); }
+  draw();
+});
+document.getElementById("doReset").addEventListener("click", function () {
+  spec = JSON.parse(JSON.stringify(scene));
+  seenEvents = -1;
+  seenFailed = 0;
+  folded.clear();
+  draw();
+});
+draw();
+</script>
+</body>
+</html>

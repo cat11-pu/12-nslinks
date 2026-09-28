@@ -1,0 +1,35 @@
+{
+  "state": {
+    "entries": [["/", 1]],
+    "nodes": { "1": { "kind": "dir", "links": 1 } },
+    "counts": { "mkdir": 0, "create": 0, "link": 0, "drop": 0, "move": 0 },
+    "freed": 0,
+    "errs": []
+  },
+  "events": [
+    { "kind": "mkdir", "path": "/a" },
+    { "kind": "create", "path": "/a/f" },
+    { "kind": "mkdir", "path": "/b" },
+    { "kind": "mkdir", "path": "/b/g" },
+    { "kind": "create", "path": "/b/g/h" },
+    { "kind": "link", "from": "/b/g/h", "to": "/b/h" },
+    { "kind": "rename", "from": "/b/g", "to": "/b/g2" },
+    { "kind": "unlink", "path": "/b/h" },
+    { "kind": "mkdir", "path": "/a/g" },
+    { "kind": "unlink", "path": "/a/g" },
+    { "kind": "create", "path": "/a/f2" },
+    { "kind": "mkdir", "path": "/a2/f2/s" },
+    { "kind": "rename", "from": "/a", "to": "/a2" },
+    { "kind": "unlink", "path": "/a2/f" },
+    { "kind": "link", "from": "/a2", "to": "/a2link" },
+    { "kind": "unlink", "path": "/a2" },
+    { "kind": "create", "path": "/b/g2/k" },
+    { "kind": "rename", "from": "/b/g2", "to": "/b/g2/s" },
+    { "kind": "rename", "from": "/b/g2", "to": "/a2" },
+    { "kind": "mkdir", "path": "a/notes" },
+    { "kind": "unlink", "path": "/nope" },
+    { "kind": "mkdir", "path": "/b/g2" },
+    { "kind": "mkdir", "path": "/b/s" },
+    { "kind": "link", "from": "/a2/f2", "to": "/b/g2/f2.link" }
+  ]
+}
